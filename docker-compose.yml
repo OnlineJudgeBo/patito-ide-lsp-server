@@ -1,0 +1,21 @@
+services:
+  lsp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vibe-ide-lsp-server:local
+    container_name: vibe-ide-lsp-server
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      LSP_WORKSPACE: "/workspace"
+      JDTLS_WORKSPACE: "/tmp/jdtls-workspace"
+      LSP_AUTH_TOKEN: "${LSP_AUTH_TOKEN:-}"
+      LSP_JAVA_ARGS: "-data /tmp/jdtls-workspace"
+      LSP_CPP_ARGS: "--background-index --query-driver=/usr/bin/g++"
+    volumes:
+      - ./server/workspace:/workspace
+      - ./storage:/storage:ro
+    restart: unless-stopped

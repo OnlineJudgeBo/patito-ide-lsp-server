@@ -1,0 +1,18 @@
+.next/
+out/
+dist/
+node_modules/
+.env*.local
+.DS_Store
+*.log
+tsconfig.tsbuildinfo
+
+# Local LSP runtime state
+.omx/
+server/workspace/
+!server/workspace/.gitkeep
+
+# Cached LSP runtime archives (keep docs/placeholders)
+storage/*.tar.gz
+!storage/README.md
+!storage/.gitkeep
