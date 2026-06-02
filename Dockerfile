@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim
 
 ARG TARGETARCH
-ARG GO_VERSION=1.24.10
+ARG GO_VERSION=1.25.10
 ARG GOPLS_VERSION=v0.21.1
 ARG JAVA_VERSION=21
 
@@ -9,9 +9,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PORT=3001 \
     HOST=0.0.0.0 \
     LSP_WORKSPACE=/workspace \
+    JDTLS_WORKSPACE=/tmp/jdtls-workspace \
     GOPATH=/opt/go \
+    CARGO_HOME=/opt/cargo \
+    RUSTUP_HOME=/opt/rustup \
     JAVA_HOME=/opt/java/openjdk \
-    PATH=/opt/java/openjdk/bin:/opt/go/bin:/usr/local/go/bin:/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/java/openjdk/bin:/opt/go/bin:/opt/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY storage/ /storage/
 
@@ -60,7 +63,7 @@ RUN set -eux; \
 
 RUN npm install -g pyright typescript typescript-language-server \
   && go install golang.org/x/tools/gopls@${GOPLS_VERSION} \
-  && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
+  && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path \
   && rustup component add rust-analyzer
 
 WORKDIR /app/lsp-server
@@ -69,7 +72,13 @@ RUN npm install --omit=dev
 COPY server/ ./
 RUN node scripts/install-jdtls.mjs \
   && npm cache clean --force \
-  && mkdir -p /workspace
+  && mkdir -p /workspace /tmp/jdtls-workspace \
+  && chown -R node:node /app/lsp-server /workspace /tmp/jdtls-workspace /opt/go /opt/cargo /opt/rustup
+
+USER node
 
 EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3001) + '/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
 CMD ["npm", "start"]

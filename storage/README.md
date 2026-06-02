@@ -4,13 +4,13 @@ Put pre-downloaded runtime archives here to make `docker compose build` from `vi
 
 Expected filenames for the default build args on linux/amd64:
 
-- `go1.24.10.linux-amd64.tar.gz`
+- `go1.25.10.linux-amd64.tar.gz`
 - `temurin-21-linux-x64.tar.gz`
 - `jdt-language-server.tar.gz`
 
 For linux/arm64 use:
 
-- `go1.24.10.linux-arm64.tar.gz`
+- `go1.25.10.linux-arm64.tar.gz`
 - `temurin-21-linux-aarch64.tar.gz`
 - `jdt-language-server.tar.gz`
 
