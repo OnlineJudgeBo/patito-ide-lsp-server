@@ -1,4 +1,3 @@
-import type { LanguageId } from '@/types/ide';
 import type { LanguageServerIntegration } from '@/lsp/types';
 import { cppLspIntegration } from './cpp';
 import { goLspIntegration } from './go';
@@ -14,4 +13,4 @@ export const LSP_INTEGRATIONS = {
   javascript: javascriptLspIntegration,
   rust: rustLspIntegration,
   go: goLspIntegration,
-} satisfies Record<LanguageId, LanguageServerIntegration>;
+} satisfies Record<string, LanguageServerIntegration>;

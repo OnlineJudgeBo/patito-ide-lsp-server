@@ -12,22 +12,23 @@ El runtime LSP alimenta el autocompletado del editor y los indicadores de estado
 
 ### Autocompletado
 
-![Sugerencias de Monaco](../docs/assets/monaco-completion.png)
+![Sugerencias de Monaco](../vibe-ide/docs/assets/monaco-completion.png)
 
 ### Estado LSP y paneles
 
-![Indicador LSP y paneles](../docs/assets/lsp-and-panels.png)
+![Indicador LSP y paneles](../vibe-ide/docs/assets/lsp-and-panels.png)
 
 ## Cómo Se Integra
 
-El IDE en Next.js no habla directamente con los servidores de lenguaje. El navegador abre un WebSocket por lenguaje, el puente valida el token opcional y después reenvía mensajes JSON-RPC entre Monaco y el proceso del language server seleccionado.
+El IDE en Next.js no habla directamente con los servidores de lenguaje. El navegador abre un WebSocket same-origin por lenguaje hacia el proxy Next.js. El proxy conecta al bridge externo con el token privado obligatorio, y el bridge reenvía mensajes JSON-RPC entre Monaco y el proceso del language server seleccionado.
 
 ```mermaid
 flowchart LR
   User[Usuario edita código] --> Monaco[Editor Monaco]
   Monaco --> Adapter[monaco-adapter.ts]
   Adapter --> Client[browser-client.ts]
-  Client -->|WebSocket + token| Bridge[Puente LSP server.mjs]
+  Client -->|WebSocket same-origin| Proxy[Proxy Next.js /api/lsp]
+  Proxy -->|WebSocket + token Authorization| Bridge[Puente LSP server.mjs]
   Bridge -->|stdio JSON-RPC| Server[Language server]
   Server --> Bridge
   Bridge --> Client
@@ -99,29 +100,34 @@ No uses `NEXT_PUBLIC_LSP_AUTH_TOKEN`; cualquier valor `NEXT_PUBLIC_*` queda incl
 
 ## Ejecutar Con Docker Compose
 
-Desde la raíz del repositorio:
+### Stack local completo de Patito
+
+Desde `/home/hustoj/src/patito-src/src-new` o la raíz que contiene el `docker-compose.yml` principal:
 
 ```bash
-npm run lsp:up
+docker compose up -d --build vibe-lsp-server vibe-ide
 ```
 
-Comando directo equivalente:
+El stack local usa solo HTTP:
 
-```bash
-docker compose -f lsp/docker-compose.yml up --build
+```txt
+http://patito.localhost/ide/
+ws://patito.localhost/ide/api/lsp/cpp
 ```
 
-Después ejecutá el IDE en otra terminal:
+### Bridge LSP standalone
+
+Desde `vibe-lsp-server/`:
 
 ```bash
-npm run dev
+docker compose up --build
 ```
 
 El bridge externo escucha en `http://localhost:3001` y expone rutas WebSocket protegidas por token bajo `/lsp/:language`. El navegador debe conectarse al proxy de la app Next.js bajo `/api/lsp/:language`, no directamente a este bridge externo.
 
 ## Configurar El IDE
 
-Creá `.env.local` en la raíz del repositorio:
+Creá `.env.local` en `vibe-ide/` cuando ejecutes el IDE fuera del compose principal:
 
 ```env
 NEXT_PUBLIC_LSP_JAVA_WS="/api/lsp/java"
@@ -135,7 +141,7 @@ LSP_AUTH_TOKEN="dev-lsp-token"
 LSP_SERVER_WS_BASE="ws://127.0.0.1:3001"
 ```
 
-Configura el secreto del bridge externo en `lsp/.env`, y configura el mismo secreto más la URL upstream en el entorno de la app Next.js:
+Configura el secreto del bridge externo en `vibe-lsp-server/.env` o en el entorno de compose, y configura el mismo secreto más la URL upstream en el entorno de la app Next.js:
 
 ```env
 LSP_AUTH_TOKEN="dev-lsp-token"
@@ -155,21 +161,15 @@ Respuesta esperada:
 
 ## Builds Docker Más Rápidos
 
-La imagen Docker puede instalar Go, Java y JDTLS desde archivos locales en `lsp/storage/` en vez de descargarlos en cada rebuild sin cache.
+La imagen Docker puede instalar Go, Java y JDTLS desde archivos locales en `vibe-lsp-server/storage/` en vez de descargarlos en cada rebuild sin cache.
 
-Primero llená el cache:
-
-```bash
-npm run lsp:cache
-```
-
-Después construí normalmente:
+Llena el cache desde el paquete del IDE cuando este directorio compañero esté copiado como `lsp/`, o ejecuta el script de cache directamente si existe en tu checkout. Después construí normalmente:
 
 ```bash
-npm run lsp:up
+docker compose up --build
 ```
 
-Los nombres esperados de los archivos están documentados en `storage/README.md`. Los volúmenes nombrados de Docker sirven en runtime, pero no están disponibles durante `docker build`; por eso el cache de build vive en `lsp/storage/`.
+Los nombres esperados de los archivos están documentados en `storage/README.md`. Los volúmenes nombrados de Docker sirven en runtime, pero no están disponibles durante `docker build`; por eso el cache de build vive en `storage/`.
 
 ## Sobrescribir Comandos De Language Servers
 
@@ -217,5 +217,5 @@ JDTLS usa un workspace interno separado en `/tmp/jdtls-workspace`. Mantenelo fue
 | El WebSocket cierra con `1008` | Revisa que la app Next.js y el bridge LSP externo compartan `LSP_AUTH_TOKEN`, y que el IDE use `/api/lsp/:language`. |
 | Java no muestra completions | Confirmá que JDTLS arranca con Java 21+ y usa `/tmp/jdtls-workspace`. |
 | Falta Rust o Go server | Reconstruí la imagen Docker y revisá los logs de instalación. |
-| El IDE no tiene funciones LSP | Confirmá que las variables `NEXT_PUBLIC_LSP_*_WS` apuntan al puerto `3001`. |
-| El rebuild Docker tarda mucho | Ejecutá `npm run lsp:cache` y reconstruí con el cache local. |
+| El IDE no tiene funciones LSP | Confirmá que las variables del navegador apunten a `/api/lsp/*` same-origin, y que `LSP_SERVER_WS_BASE` apunte al bridge, por ejemplo `ws://vibe-lsp-server:3001` en compose o `ws://127.0.0.1:3001` local. |
+| El rebuild Docker tarda mucho | Llena `vibe-lsp-server/storage/` con los archivos listados en `storage/README.md` y reconstruí. |
