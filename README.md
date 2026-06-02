@@ -12,22 +12,23 @@ The LSP runtime powers the editor completion UI and status indicators shown in t
 
 ### Completion UI
 
-![Monaco completion suggestions](../docs/assets/monaco-completion.png)
+![Monaco completion suggestions](../vibe-ide/docs/assets/monaco-completion.png)
 
 ### LSP status and panels
 
-![LSP indicator and output panels](../docs/assets/lsp-and-panels.png)
+![LSP indicator and output panels](../vibe-ide/docs/assets/lsp-and-panels.png)
 
 ## How It Integrates
 
-The Next.js IDE never talks to language servers directly. The browser opens a WebSocket per language, the external bridge validates the required token, and then the bridge forwards JSON-RPC messages between Monaco and the selected language server process.
+The Next.js IDE never talks to language servers directly. The browser opens a same-origin WebSocket per language to the Next.js proxy. The proxy connects to the external bridge with the required private token, and the bridge forwards JSON-RPC messages between Monaco and the selected language server process.
 
 ```mermaid
 flowchart LR
   User[User edits code] --> Monaco[Monaco editor]
   Monaco --> Adapter[monaco-adapter.ts]
   Adapter --> Client[browser-client.ts]
-  Client -->|WebSocket + token| Bridge[LSP bridge server.mjs]
+  Client -->|same-origin WebSocket| Proxy[Next.js /api/lsp proxy]
+  Proxy -->|WebSocket + Authorization token| Bridge[LSP bridge server.mjs]
   Bridge -->|stdio JSON-RPC| Server[Language server]
   Server --> Bridge
   Bridge --> Client
@@ -99,29 +100,34 @@ Do not use `NEXT_PUBLIC_LSP_AUTH_TOKEN`; any `NEXT_PUBLIC_*` value is bundled in
 
 ## Run With Docker Compose
 
-From the repository root:
+### Full Patito local stack
+
+From `/home/hustoj/src/patito-src/src-new` or the repository root that contains the top-level `docker-compose.yml`:
 
 ```bash
-npm run lsp:up
+docker compose up -d --build vibe-lsp-server vibe-ide
 ```
 
-Equivalent direct command:
+The full stack is HTTP-only locally:
 
-```bash
-docker compose -f lsp/docker-compose.yml up --build
+```txt
+http://patito.localhost/ide/
+ws://patito.localhost/ide/api/lsp/cpp
 ```
 
-Then run the IDE in another terminal:
+### Standalone LSP bridge
+
+From `vibe-lsp-server/`:
 
 ```bash
-npm run dev
+docker compose up --build
 ```
 
 The external bridge listens on `http://localhost:3001` and exposes token-protected WebSocket routes under `/lsp/:language`. The browser should connect to the Next.js app proxy under `/api/lsp/:language`, not to this external bridge directly.
 
 ## Configure The IDE
 
-Create `.env.local` at the repository root:
+Create `.env.local` in `vibe-ide/` when running the IDE outside the top-level compose stack:
 
 ```env
 NEXT_PUBLIC_LSP_JAVA_WS="/api/lsp/java"
@@ -135,7 +141,7 @@ LSP_AUTH_TOKEN="dev-lsp-token"
 LSP_SERVER_WS_BASE="ws://127.0.0.1:3001"
 ```
 
-Configure the external bridge secret in `lsp/.env`, and configure the same secret plus upstream URL in the Next.js app environment:
+Configure the external bridge secret in `vibe-lsp-server/.env` or the compose environment, and configure the same secret plus upstream URL in the Next.js app environment:
 
 ```env
 LSP_AUTH_TOKEN="dev-lsp-token"
@@ -155,21 +161,15 @@ Expected response:
 
 ## Faster Docker Builds
 
-The Docker image can install Go, Java and JDTLS from local archives in `lsp/storage/` instead of downloading them on every uncached rebuild.
+The Docker image can install Go, Java and JDTLS from local archives in `vibe-lsp-server/storage/` instead of downloading them on every uncached rebuild.
 
-Populate the cache:
-
-```bash
-npm run lsp:cache
-```
-
-Build normally after the cache exists:
+Populate the cache from the IDE package when the companion directory is copied as `lsp/`, or run the cache script directly if available in your checkout. Build normally after the cache exists:
 
 ```bash
-npm run lsp:up
+docker compose up --build
 ```
 
-Expected archive names are documented in `storage/README.md`. Docker named volumes are useful at runtime, but they are not available during `docker build`; this is why build archives live under `lsp/storage/`.
+Expected archive names are documented in `storage/README.md`. Docker named volumes are useful at runtime, but they are not available during `docker build`; this is why build archives live under `storage/`.
 
 ## Override Language Server Commands
 
@@ -217,5 +217,5 @@ JDTLS uses a separate internal Eclipse workspace at `/tmp/jdtls-workspace`. Keep
 | WebSocket closes with `1008` | Check that the Next.js app and external LSP bridge share `LSP_AUTH_TOKEN`, and that the IDE URL uses `/api/lsp/:language`. |
 | Java completions are empty | Confirm JDTLS starts with Java 21+ and uses `/tmp/jdtls-workspace`. |
 | Rust or Go server is missing | Rebuild the Docker image and check the install logs. |
-| IDE has no LSP features | Confirm the `NEXT_PUBLIC_LSP_*_WS` variables point to port `3001`. |
-| Docker rebuild is slow | Run `npm run lsp:cache` and rebuild with the local archive cache. |
+| IDE has no LSP features | Confirm the browser variables point to same-origin `/api/lsp/*`, and `LSP_SERVER_WS_BASE` points to the bridge, for example `ws://vibe-lsp-server:3001` in compose or `ws://127.0.0.1:3001` locally. |
+| Docker rebuild is slow | Populate `vibe-lsp-server/storage/` with the archives listed in `storage/README.md`, then rebuild. |

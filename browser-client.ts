@@ -104,7 +104,9 @@ function workspaceEditToMonaco(monaco: MonacoApi, edit?: LspWorkspaceEdit) {
 function resolveWebSocketUrl(websocketUrl: string) {
   if (!websocketUrl.startsWith('/')) return websocketUrl;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}${websocketUrl}`;
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? '').replace(/\/+$/g, '');
+  const path = basePath && !websocketUrl.startsWith(`${basePath}/`) ? `${basePath}${websocketUrl}` : websocketUrl;
+  return `${protocol}//${window.location.host}${path}`;
 }
 
 async function webSocketMessageToText(raw: string | ArrayBuffer | Blob) {
