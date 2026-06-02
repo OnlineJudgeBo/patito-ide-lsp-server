@@ -3,12 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/samuelloza/vibe-lsp-server:local
+    image: "${LSP_IMAGE_NAME:-ghcr.io/samuelloza/vibe-lsp-server-${LSP_IMAGE_BRANCH:-local}}"
     env_file:
       - .env
     environment:
       PORT: "${PORT:-3001}"
       HOST: "${HOST:-0.0.0.0}"
+      LSP_AUTH_TOKEN: "${LSP_AUTH_TOKEN:?LSP_AUTH_TOKEN is required in .env}"
       LSP_WORKSPACE: "${LSP_WORKSPACE:-/workspace}"
       JDTLS_WORKSPACE: "${JDTLS_WORKSPACE:-/tmp/jdtls-workspace}"
       LSP_JAVA_ARGS: "${LSP_JAVA_ARGS:--data /tmp/jdtls-workspace}"
