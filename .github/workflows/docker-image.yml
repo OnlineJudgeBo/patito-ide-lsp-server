@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: ghcr.io/onlinejudgebo/vibe-ide-lsp-server
+  IMAGE_NAME: ghcr.io/onlinejudgebo/patito-ide-lsp-server
 
 jobs:
   docker-image:
