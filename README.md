@@ -1,221 +1,127 @@
-# Vibe IDE LSP Runtime
+# Patito IDE LSP Server
 
-[English](README.md) · [Español](README.es.md)
+English · [Español](README.es.md)
 
-This project is the language intelligence runtime for the Vibe Judge IDE. It provides the browser-side Monaco LSP adapters and a Dockerized WebSocket bridge that starts real language servers over stdio.
+This service is the bridge between Monaco and the language servers. It receives LSP messages over WebSocket and forwards them to each language process through standard input and output.
 
-Use it when the IDE needs completions, diagnostics, hover information and language-aware editor behavior for Java, C++, Python, JavaScript, Rust and Go.
+Java, C++, Python, JavaScript, Rust, and Go are supported.
 
-## Screenshots
+## Running the server
 
-The LSP runtime powers the editor completion UI and status indicators shown in the main IDE.
+Docker is the recommended option because the image already includes the required runtimes and language servers.
 
-### Completion UI
-
-![Monaco completion suggestions](../vibe-ide/docs/assets/monaco-completion.png)
-
-### LSP status and panels
-
-![LSP indicator and output panels](../vibe-ide/docs/assets/lsp-and-panels.png)
-
-## How It Integrates
-
-The Next.js IDE never talks to language servers directly. The browser opens a same-origin WebSocket per language to the Next.js proxy. The proxy connects to the external bridge with the required private token, and the bridge forwards JSON-RPC messages between Monaco and the selected language server process.
-
-```mermaid
-flowchart LR
-  User[User edits code] --> Monaco[Monaco editor]
-  Monaco --> Adapter[monaco-adapter.ts]
-  Adapter --> Client[browser-client.ts]
-  Client -->|same-origin WebSocket| Proxy[Next.js /api/lsp proxy]
-  Proxy -->|WebSocket + Authorization token| Bridge[LSP bridge server.mjs]
-  Bridge -->|stdio JSON-RPC| Server[Language server]
-  Server --> Bridge
-  Bridge --> Client
-  Client --> Monaco
-```
-
-```mermaid
-sequenceDiagram
-  participant B as Browser IDE
-  participant C as BrowserLspClient
-  participant P as Next.js LSP proxy
-  participant W as External LSP bridge
-  participant L as Language server
-
-  B->>C: Open language document
-  C->>P: ws://ide-host/api/lsp/:language
-  W->>W: Validate browser Origin
-  P->>W: ws://lsp-host/lsp/:language + Authorization: Bearer LSP_AUTH_TOKEN
-  alt Authorized
-    W->>L: Spawn command for selected language
-    C->>W: initialize / didOpen / didChange
-    W->>L: Forward JSON-RPC over stdio
-    L-->>W: completions / diagnostics / hover
-    W-->>C: Forward JSON-RPC over WebSocket
-    C-->>B: Update Monaco models
-  else Unauthorized
-    W-->>C: Close WebSocket with code 1008
-  end
-```
-
-## Runtime Pieces
-
-| Path | Purpose |
-| --- | --- |
-| `browser-client.ts` | Browser WebSocket LSP client used by the IDE. |
-| `monaco-adapter.ts` | Connects Monaco models, diagnostics and providers to the LSP client. |
-| `integrations/*` | Per-language Monaco and LSP integration settings. |
-| `server/server.mjs` | Node WebSocket-to-stdio bridge. |
-| `Dockerfile` | Installs language servers and required runtimes. |
-| `docker-compose.yml` | Runs the bridge on port `3001` and mounts `/workspace`. |
-| `storage/` | Optional local build cache for Go, Java and JDTLS archives. |
-
-## Routes
-
-| WebSocket route | Language server |
-| --- | --- |
-| `ws://localhost:3001/lsp/java` | Eclipse JDT Language Server (`jdtls`) |
-| `ws://localhost:3001/lsp/cpp` | `clangd` |
-| `ws://localhost:3001/lsp/python` | `pyright-langserver --stdio` |
-| `ws://localhost:3001/lsp/js` | `typescript-language-server --stdio` |
-| `ws://localhost:3001/lsp/rust` | `rust-analyzer` |
-| `ws://localhost:3001/lsp/go` | `gopls serve` |
-
-## Authentication
-
-Authentication is split between the Next.js proxy and the external LSP bridge:
-
-1. Browser connections use same-origin `/api/lsp/:language` on the Next.js app and do not receive any LSP token.
-2. The Next.js proxy opens the external LSP server `/lsp/:language` route with the private `LSP_AUTH_TOKEN` as a server-side `Authorization: Bearer` header.
-
-```env
-# lsp/.env, read only by Docker/server runtime
-LSP_AUTH_TOKEN="dev-lsp-token"
-```
-
-`LSP_AUTH_TOKEN` is required; the bridge refuses to start without it.
-
-Do not use `NEXT_PUBLIC_LSP_AUTH_TOKEN`; any `NEXT_PUBLIC_*` value is bundled into the browser and is not a secret.
-
-## Run With Docker Compose
-
-### Full Patito local stack
-
-From `/home/hustoj/src/patito-src/src-new` or the repository root that contains the top-level `docker-compose.yml`:
+Create the local configuration:
 
 ```bash
-docker compose up -d --build vibe-lsp-server vibe-ide
+cp .env.example .env
 ```
 
-The full stack is HTTP-only locally:
+At minimum, replace the token:
 
-```txt
-http://patito.localhost/ide/
-ws://patito.localhost/ide/api/lsp/cpp
+```env
+LSP_AUTH_TOKEN=replace-with-a-local-secret
+LSP_PORT=3001
 ```
 
-### Standalone LSP bridge
-
-From `vibe-lsp-server/`:
+Then run:
 
 ```bash
 docker compose up --build
-```
-
-The external bridge listens on `http://localhost:3001` and exposes token-protected WebSocket routes under `/lsp/:language`. The browser should connect to the Next.js app proxy under `/api/lsp/:language`, not to this external bridge directly.
-
-## Configure The IDE
-
-Create `.env.local` in `vibe-ide/` when running the IDE outside the top-level compose stack:
-
-```env
-NEXT_PUBLIC_LSP_JAVA_WS="/api/lsp/java"
-NEXT_PUBLIC_LSP_CPP_WS="/api/lsp/cpp"
-NEXT_PUBLIC_LSP_PYTHON_WS="/api/lsp/python"
-NEXT_PUBLIC_LSP_JAVASCRIPT_WS="/api/lsp/js"
-NEXT_PUBLIC_LSP_RUST_WS="/api/lsp/rust"
-NEXT_PUBLIC_LSP_GO_WS="/api/lsp/go"
-
-LSP_AUTH_TOKEN="dev-lsp-token"
-LSP_SERVER_WS_BASE="ws://127.0.0.1:3001"
-```
-
-Configure the external bridge secret in `vibe-lsp-server/.env` or the compose environment, and configure the same secret plus upstream URL in the Next.js app environment:
-
-```env
-LSP_AUTH_TOKEN="dev-lsp-token"
-```
-
-## Health Check
-
-```bash
 curl http://localhost:3001/healthz
 ```
 
-Expected response:
+`/healthz` returns the list of available languages.
 
-```json
-{"ok":true,"languages":["java","cpp","python","js","rust","go"]}
-```
+## Dependencies
 
-## Faster Docker Builds
+The LSP server can run by itself. It does not need the database or the Patito API.
 
-The Docker image can install Go, Java and JDTLS from local archives in `vibe-lsp-server/storage/` instead of downloading them on every uncached rebuild.
+`patito-ide` is its client, and both services must use the same `LSP_AUTH_TOKEN`. The IDE still opens without this container, but completion and language diagnostics will not work.
 
-Populate the cache from the IDE package when the companion directory is copied as `lsp/`, or run the cache script directly if available in your checkout. Build normally after the cache exists:
+To start it with the rest of Patito, run this command from the workspace root:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-Expected archive names are documented in `storage/README.md`. Docker named volumes are useful at runtime, but they are not available during `docker build`; this is why build archives live under `storage/`.
+Compose checks `/healthz` before starting the IDE.
 
-## Override Language Server Commands
+## Environment variables
 
-Every language server command can be overridden with environment variables:
+| Variable | Purpose | Usual value |
+| --- | --- | --- |
+| `PORT` | port used inside the container | `3001` |
+| `HOST` | interface where Node listens | `0.0.0.0` |
+| `LSP_PORT` | port published on the host | `3001` |
+| `LSP_AUTH_TOKEN` | token shared with Patito IDE | no safe default |
+| `LSP_WORKSPACE` | directory containing opened files | `/workspace` |
+| `JDTLS_WORKSPACE` | internal Java workspace | `/tmp/jdtls-workspace` |
+| `LSP_<LANG>_COMMAND` | replaces a language server executable | image dependent |
+| `LSP_<LANG>_ARGS` | replaces its arguments | language dependent |
+| `LSP_PROCESS_EXIT_GRACE_MS` | wait before forcing a process to stop | optional |
+| `LSP_IMAGE_NAME` | name assigned to the built image | optional |
+| `LSP_IMAGE_BRANCH` | tag used by Compose | `local` |
 
-| Language | Command variables |
-| --- | --- |
-| Java | `LSP_JAVA_COMMAND`, `LSP_JAVA_ARGS` |
-| C++ | `LSP_CPP_COMMAND`, `LSP_CPP_ARGS` |
-| Python | `LSP_PYTHON_COMMAND`, `LSP_PYTHON_ARGS` |
-| JavaScript | `LSP_JAVASCRIPT_COMMAND`, `LSP_JAVASCRIPT_ARGS` |
-| Rust | `LSP_RUST_COMMAND`, `LSP_RUST_ARGS` |
-| Go | `LSP_GO_COMMAND`, `LSP_GO_ARGS` |
+`<LANG>` can be `JAVA`, `CPP`, `PYTHON`, `JAVASCRIPT`, `RUST`, or `GO`.
 
-Example:
+## Connection flow
 
-```bash
-LSP_CPP_ARGS="--background-index --clang-tidy" npm run lsp:up
-```
-
-## Workspace
-
-The compose file mounts `lsp/server/workspace` to `/workspace` in the container. Monaco opens files like:
+The browser opens `/api/lsp/<language>` on Patito IDE. The Next.js server adds the private token before connecting to this service.
 
 ```text
-file:///workspace/main.cpp
-file:///workspace/Main.java
+Monaco -> /api/lsp/:language -> LSP bridge -> language server
 ```
 
-JDTLS uses a separate internal Eclipse workspace at `/tmp/jdtls-workspace`. Keep it outside `/workspace`; otherwise JDTLS cannot create its invisible project for single-file Java documents and Java completions such as `Integer.` can return empty results.
+The IDE and this container must share `LSP_AUTH_TOKEN`. Do not expose it as `NEXT_PUBLIC_LSP_AUTH_TOKEN`.
 
-## Add A Language
-
-1. Install the language server in `Dockerfile`.
-2. Add the command and route to `server/server.mjs`.
-3. Add a browser integration file under `integrations/`.
-4. Register the endpoint in the IDE environment variables.
-5. Add Monaco language configuration if Monaco does not already include it.
-6. Start the bridge and verify `/healthz` plus one editor completion request.
-
-## Troubleshooting
-
-| Problem | Check |
+| Route | Language server |
 | --- | --- |
-| WebSocket closes with `1008` | Check that the Next.js app and external LSP bridge share `LSP_AUTH_TOKEN`, and that the IDE URL uses `/api/lsp/:language`. |
-| Java completions are empty | Confirm JDTLS starts with Java 21+ and uses `/tmp/jdtls-workspace`. |
-| Rust or Go server is missing | Rebuild the Docker image and check the install logs. |
-| IDE has no LSP features | Confirm the browser variables point to same-origin `/api/lsp/*`, and `LSP_SERVER_WS_BASE` points to the bridge, for example `ws://vibe-lsp-server:3001` in compose or `ws://127.0.0.1:3001` locally. |
-| Docker rebuild is slow | Populate `vibe-lsp-server/storage/` with the archives listed in `storage/README.md`, then rebuild. |
+| `/lsp/java` | Eclipse JDTLS |
+| `/lsp/cpp` | clangd |
+| `/lsp/python` | Pyright |
+| `/lsp/js` | TypeScript Language Server |
+| `/lsp/rust` | rust-analyzer |
+| `/lsp/go` | gopls |
+
+## Project structure
+
+```text
+.
+├── integrations/          per-language configuration
+├── server/
+│   ├── scripts/           JDTLS installation
+│   ├── workspace/         files visible to the LSP server
+│   ├── package.json
+│   └── server.mjs         WebSocket/stdio bridge
+├── storage/              optional build cache
+├── browser-client.ts     WebSocket client
+├── monaco-adapter.ts     Monaco integration
+├── protocol.ts           LSP message types
+├── .env.example         Docker variables
+├── Dockerfile            runtimes and language servers
+└── docker-compose.yml    local service
+```
+
+JDTLS uses `/tmp/jdtls-workspace`. Do not move it to `/workspace`: Java completion stops working correctly when both workspaces are mixed.
+
+## Overriding language commands
+
+Each language server command can be replaced through environment variables. For example:
+
+```env
+LSP_CPP_COMMAND=clangd
+LSP_CPP_ARGS=--background-index --clang-tidy
+LSP_JAVA_ARGS=-data /tmp/jdtls-workspace
+```
+
+The same pattern works with `JAVA`, `CPP`, `PYTHON`, `JAVASCRIPT`, `RUST`, and `GO`.
+
+## Checking the Node server
+
+```bash
+cd server
+npm ci
+npm run check
+```
+
+Optional archives used to speed up image builds are documented in [`storage/README.md`](storage/README.md).
